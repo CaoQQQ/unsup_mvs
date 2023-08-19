@@ -50,7 +50,7 @@ class FeaturePyramid(nn.Module):
         self.conv0c23 = conv(32, 16, kernel_size=3, stride=1)
         self.conv0out = conv(16, 16, kernel_size=3, stride=1)
         '''
-        self.downsample1 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=4, stride=2, padding=1)
+        #self.downsample1 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=4, stride=2, padding=1)
         #self.downsample2 = nn.Conv2d(in_channels=16, out_channels=16, kernel_size=4, stride=2, padding=1)
 
         # 注意力机制定义
@@ -122,7 +122,8 @@ class FeaturePyramid(nn.Module):
 
             '''
             # 首先进行了九层卷积，从3通道变成了16通道的特征图，图像分辨率不变
-            img = self.downsample1(img)  # 使用卷积来实现下采样
+            #img = self.downsample1(img)  # 使用卷积来实现下采样
+            img = nn.functional.interpolate(img, scale_factor=0.5, mode='bilinear', align_corners=None).detach()
             f = self.conv0aa(img)
             f_out = self.conv0bh(
                 self.conv0bg(self.conv0bf(self.conv0be(self.conv0bd(self.conv0bc(self.conv0bb(self.conv0ba(f))))))))
