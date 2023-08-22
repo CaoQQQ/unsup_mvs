@@ -362,18 +362,6 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
         # 实际中，LeakyReLU的α取值一般为0.01。
         nn.LeakyReLU(0.1)
     )
-# 定义注意力模块
-class AttentionModule(nn.Module):
-    def __init__(self, in_channels):
-        super(AttentionModule, self).__init__()
-        self.conv = nn.Conv2d(in_channels, 1, kernel_size=1)  # 1x1卷积用于特征压缩
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        attention = self.conv(x)  # 使用1x1卷积压缩特征
-        attention = self.sigmoid(attention)  # 使用sigmoid激活函数
-        out = x * attention  # 特征加权
-        return out
 
 # 三维卷积涉及模块
 class ConvBnReLU3D(nn.Module):
@@ -385,33 +373,43 @@ class ConvBnReLU3D(nn.Module):
     def forward(self, x):
         return F.relu(self.bn(self.conv(x)), inplace=True)
 
-#根据上面模块加入自注意力机制
-class SelfAttentionConvBnReLU3D(nn.Module):
+#ConvBnReLU3D 模块改为使用深度可分离卷积
+class DepthwiseSeparableConvBnReLU3D(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, pad=1):
-        super(SelfAttentionConvBnReLU3D, self).__init__()
-
-        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=pad, bias=True)
-        self.attention = nn.Sequential(
-            nn.Conv3d(out_channels, out_channels // 2, kernel_size=1, stride=1, padding=0),
-            nn.ReLU(inplace=True),
-            nn.Conv3d(out_channels // 2, 1, kernel_size=1, stride=1, padding=0),
-            nn.Softmax(dim=2)  # 在特征图维度上进行softmax
+        super(DepthwiseSeparableConvBnReLU3D, self).__init__()
+        # 第一阶段：深度可分离卷积，深度卷积
+        # 每个输入通道都有一个独立的卷积核，使用groups=in_channels实现
+        self.depthwise_conv = nn.Conv3d(
+            in_channels,  # 输入通道数
+            in_channels,  # 输出通道数（与输入通道数相同，每个通道一个卷积核）
+            kernel_size,  # 卷积核大小
+            stride=stride,  # 步幅
+            padding=pad,  # 零填充
+            groups=in_channels,  # 深度卷积中，每个通道独立卷积
+            bias=False  # 不使用偏置项
         )
+        # 第二阶段：逐点卷积
+        # 使用1x1卷积核将通道信息整合
+        self.pointwise_conv = nn.Conv3d(
+            in_channels,  # 输入通道数
+            out_channels,  # 输出通道数
+            1,  # 1x1卷积核大小
+            bias=False  # 不使用偏置项
+        )
+        # 批归一化层
         self.bn = nn.BatchNorm3d(out_channels)
-
+        # ReLU激活函数
+        self.relu = nn.ReLU(inplace=True)
     def forward(self, x):
-        x_conv = self.conv(x)
-
-        # 使用注意力层在特征图维度上生成权重
-        attn_weights = self.attention(x_conv)
-
-        # 将注意力权重应用于特征图
-        x_attn = x_conv * attn_weights
-
-        # 应用批归一化和ReLU
-        x_attn = self.bn(x_attn)
-        x_attn = F.relu(x_attn, inplace=True)
-        return x_attn
+        # 第一阶段：深度卷积
+        x = self.depthwise_conv(x)
+        # 第二阶段：逐点卷积
+        x = self.pointwise_conv(x)
+        # 批归一化
+        x = self.bn(x)
+        # ReLU激活函数
+        x = self.relu(x)
+        return x
 
 
 # 深度回归涉及模块
